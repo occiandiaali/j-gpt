@@ -1,0 +1,4 @@
+.env
+.jgpt/
+__pycache__/
+*.pyc

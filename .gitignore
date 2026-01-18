@@ -1,4 +1,5 @@
 .env
 .jgpt/
+.streamlit/
 __pycache__/
 *.pyc

@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Gemini API config
-API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = st.secrets["general"]["GEMINI_API_KEY"] #os.getenv("GEMINI_API_KEY")
 
 client = genai.Client(api_key=API_KEY)
 

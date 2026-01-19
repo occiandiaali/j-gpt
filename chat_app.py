@@ -22,7 +22,7 @@ def fetch_company_reviews(company_name):
     # Example: Indeed company reviews page 
     url = f"https://www.indeed.com/cmp/{company_name}/reviews" 
     try: 
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) 
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) 
         soup = BeautifulSoup(response.text, "html.parser") 
         # Grab some snippets of reviews (class names may change!) 
         snippets = soup.find_all("div") 
@@ -48,10 +48,37 @@ def fetch_company_news(company_name):
     return news_text
 
 st.set_page_config(page_title="CV + Job Fit Advisor", layout="wide")
-st.logo("images/logo_white.jpg", size="large")
+st.markdown("""
+            <div class="tooltip">&#9432;
+            <span class="tooltiptext">
+            Drop/Upload your CV & provide the web-link of a job listing to begin. 
+            Click 'Analyze CV vs Job Fit' for relevant feedback, 
+            or type a question in the text-field at the bottom to chat with the AI 
+            (Wait for the AI's response to each question). 
+            Click 'Reset' under the header or 'Start over', when it appears, to clear the page or start over, as appropriate.
+            </span>
+            </div>
+            <style>
+            .tooltip{position: relative;display:inline-block;top:10%;left:0;font-size:24px;cursor:pointer}
+            .tooltip .tooltiptext{
+            position:absolute;
+            visibility:hidden;
+            width:180px;
+            font-size:12px;
+            background-color:black;
+            color:#fff;
+            text-align:center;
+            padding:4px;
+            border-radius:6px;
+            z-index:1
+            }
+            .tooltip:hover .tooltiptext{visibility: visible;}
+            </style>
+            """, unsafe_allow_html=True)
+st.logo("images/logo-nobg.png", size="large")
 st.title("💼 CV + Job Fit Advisor")
 
-if st.button("Clear all", type="tertiary"):
+if st.button("Reset", width="content", type="secondary"):
     cv_text = ""
     job_text = ""
     company_info = ""
@@ -86,8 +113,74 @@ if uploaded_file:
     elif uploaded_file.name.endswith(".docx"): 
         doc = Document(uploaded_file) 
         cv_text = "\n".join([para.text for para in doc.paragraphs]) 
-    st.success("CV received and text extracted!") 
+    st.success("CV received. Ensure there's a job link added before initiating analysis/chat.") 
+
     st.text_area("Extracted CV Text", cv_text, height=300)
+
+# --- Enter Job URL --- 
+job_url = st.text_input("Enter the job description URL to analyze or ask about:", placeholder="e.g. https://joblink.domain") 
+job_text = "" 
+company_info = "" 
+if job_url: 
+    try: 
+        response = requests.get(job_url, headers={"User-Agent": "Mozilla/5.0"}) 
+        soup = BeautifulSoup(response.text, "html.parser") 
+        job_text = soup.get_text(separator="\n") 
+        st.success("Job description loaded! You may now chat with AI advisor. Or, add a CV for analysis.") 
+     
+        # --- Simple heuristic: Gemini can infer company name from job_text --- 
+        # For now, just display job_text and let Gemini extract company name later 
+        #st.text_area("Job Description", job_text, height=300) 
+    except Exception as e: st.error(f"Error fetching job description: {e}") 
+
+# --- One-click Fit Analysis ---
+if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text):
+    try:
+        placeholding = st.empty()
+        placeholding.write("🤔 Thinking...")
+        heading_shown = False
+        full_text = ""
+
+        context = f"""
+        Candidate CV:
+        {cv_text}
+
+        Job Description:
+        {job_text}
+
+        Task:
+        Provide a structured analysis:
+        - Extract probable company name from {job_text}
+        - Comment on company reputation (if the information is available).
+        - Candidate key strengths (skills/experience that match).
+        - Gaps or missing qualifications.
+        - Evaluate cultural fit based on company values and candidate’s background.
+        - Probability of fit (low/medium/high).
+        - Advice to improve chances.
+        - Numeric fit score (0–100) with explanation.
+        """
+        # Streaming call for the new google.genai api
+        for chunk in client.models.generate_content_stream(model="gemini-2.5-flash",contents=context):
+            if chunk.text:
+                full_text += chunk.text
+                if not heading_shown:
+                    st.markdown("### Fit Analysis")
+                    heading_shown = True
+                    #print(chunk.text, end="", flush=True) 
+                placeholding.markdown(full_text) 
+
+        st.write("✅ Done!")
+
+    except requests.exceptions.Timeout:
+        st.error("⏳ The request took too long and timed out. Please try again later.")
+
+    except requests.exceptions.RequestException as e:
+        st.error("⚠️ Network issue detected. Please check your connection.")
+        #st.text(f"Details: {e}")
+
+    except Exception as e:
+        st.error("❌ Something went wrong while processing your request.")
+        st.text(f"Details: {e}")            
 
 # # --- Enter Job URL ---
 # url = st.text_input("Enter the job description URL:", placeholder="e.g. https://joblink.whatever")
@@ -99,118 +192,88 @@ if uploaded_file:
 #         job_text = soup.get_text(separator="\n")
 #         st.success("Job description loaded!")
 #     except Exception as e:
-#         st.error(f"Error fetching job description: {e}")
-# --- Enter Job URL --- 
-url = st.text_input("Enter the job description URL to analyze or ask about:", placeholder="e.g. https://joblink.whatever") 
-job_text = "" 
-company_info = "" 
-if url: 
-    try: 
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}) 
-        soup = BeautifulSoup(response.text, "html.parser") 
-        job_text = soup.get_text(separator="\n") 
-        st.success("Job description loaded!") 
-        # --- Simple heuristic: Gemini can infer company name from job_text --- 
-        # For now, just display job_text and let Gemini extract company name later 
-        #st.text_area("Job Description", job_text, height=300) 
-    except Exception as e: st.error(f"Error fetching job description: {e}")   
+#         st.error(f"Error fetching job description: {e}")   
 
 # --- Chat Interface ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Initialize lock flag
+if "busy" not in st.session_state:
+    st.session_state.busy = False    
+
 st.subheader("Chat with AI advisor")
 
-user_input = st.chat_input("Ask about this job...", disabled=not job_text)
+user_input = st.chat_input("Ask about this job...", disabled=not job_text or st.session_state.busy)
 
-if user_input and (cv_text or job_text):
-    with st.spinner("🤔 Genius at work..."):
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        company_info = job_text
-
-        context = f"""
-        Candidate CV:
-        {cv_text}
-
-        Job Description:
-        {job_text}
-
-        Company Data:
-        {company_info}
-
-        Task:
-        - Extract probable company name from {job_text} and assign it to {company_info}.
-        - Evaluate cultural fit based on company values and candidate’s background.
-        - Comment on company reputation (if the information is available).
-        - Respond with professional advice to {user_input}, keeping the above in mind, as relevant.
-        """
-
-        #response = model.generate_content(context)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=context
-        )
-    answer = response.text
-    st.session_state.messages.append({"role": "assistant", "content": answer})    
-
-# if company_info: 
-#     st.subheader("Company News") 
-#     st.text(fetch_company_news(company_info)) 
-#     st.subheader("Company Reviews (Indeed)") 
-#     st.text(fetch_company_reviews(company_info))
-# 
-
-# Display chat history
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.chat_message("user").write(msg["content"])
+if user_input:
+    if st.session_state.busy:
+        st.warning("⚠️ While jobsGPT is processing a request, please wait until it finishes.")
+        st.session_state.busy = False  # unlock
+        if st.button("Start over", type="primary"):
+            st.rerun()
     else:
-        st.chat_message("assistant").write(msg["content"])
+        st.session_state.busy = True  # lock
+        try:    
+            with st.spinner("🤔 Checking..."):
+                st.session_state.messages.append({"role": "user", "content": user_input})
+                company_info = job_text
 
-# --- One-click Fit Analysis ---
-if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text):
-    placeholding = st.empty()
-    placeholding.write("🤔 The gears are spinning...")
-    heading_shown = False
-    full_text = ""
+                context = f"""
+                Candidate CV:
+                {cv_text}
 
-    context = f"""
-    Candidate CV:
-    {cv_text}
+                Job Description:
+                {job_text}
 
-    Job Description:
-    {job_text}
+                Company Data:
+                {company_info}
 
-    Task:
-    Provide a structured analysis:
-    1. Key strengths (skills/experience that match).
-    2. Gaps or missing qualifications.
-    3. Probability of fit (low/medium/high).
-    4. Advise to improve chances.
-    5. Numeric fit score (0–100) with explanation.
-    """
-    # response = client.models.generate_content(
-    #     model="gemini-2.5-flash",
-    #     contents=context,
-    #     stream=True
-    # )
-    # for chunk in response:
-    #     if chunk.text:
-    #         full_text += chunk.text
-    #         # Show heading only once, when streaming starts
-    #         if not heading_shown:
-    #             st.markdown("### Fit Analysis")
-    #             heading_shown = True
+                Task:
+                - Respond to the candidate named in {cv_text} with professional advice about {user_input}, using {job_text} for relevant reference.
+                """
 
-    #         placeholding.markdown(full_text) 
-    # Streaming call for the new google.genai api
-    for chunk in client.models.generate_content_stream(model="gemini-2.5-flash",contents=context):
-        if chunk.text:
-            full_text += chunk.text
-            if not heading_shown:
-                st.markdown("### Fit Analysis")
-                heading_shown = True
-                #print(chunk.text, end="", flush=True) 
-            placeholding.markdown(full_text) 
+                #response = model.generate_content(context)
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=context
+                )
+            answer = response.text
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            if answer:
+                st.session_state.busy = False  # unlock
+            # Display chat history
+            for msg in st.session_state.messages:
+                if msg["role"] == "user":
+                    st.chat_message("user").write(msg["content"])
+                else:
+                    st.chat_message("assistant").write(msg["content"])
 
-    st.write("✅ Done!")
+        except requests.exceptions.Timeout:
+            st.error("⏳ The request took too long and timed out. Please try again later.")
+
+        except requests.exceptions.RequestException as e:
+            st.error("⚠️ Network issue detected. Please check your connection.")
+            #st.text(f"Details: {e}")
+
+        except Exception as e:
+            st.error("❌ Something went wrong while processing your request.")
+            st.text(f"Details: {e.message}")
+
+        # finally:
+        #     st.session_state.busy = False  # unlock        
+
+        # if company_info: 
+        #     st.subheader("Company News") 
+        #     st.text(fetch_company_news(company_info)) 
+        #     st.subheader("Company Reviews (Indeed)") 
+        #     st.text(fetch_company_reviews(company_info))
+        # 
+
+    # # Display chat history
+    # for msg in st.session_state.messages:
+    #     if msg["role"] == "user":
+    #         st.chat_message("user").write(msg["content"])
+    #     else:
+    #         st.chat_message("assistant").write(msg["content"])
+

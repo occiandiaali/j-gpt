@@ -161,7 +161,7 @@ if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text)
         - Numeric fit score (0–100) with explanation.
         """
         # Streaming call for the new google.genai api
-        for chunk in client.models.generate_content_stream(model="gemini-2.0-flash-lite",contents=context):
+        for chunk in client.models.generate_content_stream(model="gemini-2.5-flash",contents=context):
             if chunk.text:
                 full_text += chunk.text
                 if not heading_shown:

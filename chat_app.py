@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Gemini API config
-API_KEY = st.secrets["general"]["GEMINI_API_KEY"] #os.getenv("GEMINI_API_KEY")
+#API_KEY = st.secrets["general"]["GEMINI_API_KEY"] #os.getenv("GEMINI_API_KEY", "JOB_GEMINI_KEY")
+API_KEY = st.secrets["general"]["JOB_GEMINI_KEY"]
 
 client = genai.Client(api_key=API_KEY)
 
@@ -118,7 +119,7 @@ if uploaded_file:
     st.text_area("Extracted CV Text", cv_text, height=300)
 
 # --- Enter Job URL --- 
-job_url = st.text_input("Enter the job description URL to analyze or ask about:", placeholder="e.g. https://joblink.domain") 
+job_url = st.text_input("⚠️ Enter the job description URL to analyze or ask about:", placeholder="e.g. https://joblink.domain") 
 job_text = "" 
 company_info = "" 
 if job_url: 
@@ -126,7 +127,7 @@ if job_url:
         response = requests.get(job_url, headers={"User-Agent": "Mozilla/5.0"}) 
         soup = BeautifulSoup(response.text, "html.parser") 
         job_text = soup.get_text(separator="\n") 
-        st.success("Job description loaded! You may now chat with AI advisor. Or, add a CV for analysis.") 
+        st.success("Job description loaded! You may now chat with AI advisor. Or, if you haven't, add a CV for analysis.") 
      
         # --- Simple heuristic: Gemini can infer company name from job_text --- 
         # For now, just display job_text and let Gemini extract company name later 
@@ -160,7 +161,7 @@ if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text)
         - Numeric fit score (0–100) with explanation.
         """
         # Streaming call for the new google.genai api
-        for chunk in client.models.generate_content_stream(model="gemini-2.5-flash",contents=context):
+        for chunk in client.models.generate_content_stream(model="gemini-2.0-flash-lite",contents=context):
             if chunk.text:
                 full_text += chunk.text
                 if not heading_shown:
@@ -180,7 +181,7 @@ if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text)
 
     except Exception as e:
         st.error("❌ Something went wrong while processing your request.")
-        st.text(f"Details: {e}")            
+        st.text(f"Details: {e.message[:78]}")            
 
 # # --- Enter Job URL ---
 # url = st.text_input("Enter the job description URL:", placeholder="e.g. https://joblink.whatever")
@@ -230,7 +231,9 @@ if user_input:
                 {company_info}
 
                 Task:
-                - Respond to the candidate named in {cv_text} with professional advice about {user_input}, using {job_text} for relevant reference.
+                - Extract probable company name from {job_text}
+                - Comment on company reputation (if the information is available).
+                - Respond to the candidate named in {cv_text} (if provided) with professional advice about {user_input}, using {job_text} for relevant reference.
                 """
 
                 #response = model.generate_content(context)
@@ -258,7 +261,7 @@ if user_input:
 
         except Exception as e:
             st.error("❌ Something went wrong while processing your request.")
-            st.text(f"Details: {e.message}")
+            st.text(f"Details: {e.message[:78]}")
 
         # finally:
         #     st.session_state.busy = False  # unlock        

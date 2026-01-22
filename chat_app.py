@@ -119,10 +119,10 @@ if uploaded_file:
     st.text_area("Extracted CV Text", cv_text, height=300)
 
 # --- Enter Job URL --- 
-job_url = st.text_input("⚠️ Enter the job description URL to analyze or ask about:", placeholder="e.g. https://joblink.domain") 
+job_url = st.text_input("*Enter the job description URL to analyze or ask about*:", placeholder="e.g. https://joblink.domain") 
 job_text = "" 
 company_info = "" 
-if job_url: 
+if job_url and job_url.startswith("https://") or job_url.startswith("http://"): 
     try: 
         response = requests.get(job_url, headers={"User-Agent": "Mozilla/5.0"}) 
         soup = BeautifulSoup(response.text, "html.parser") 
@@ -133,6 +133,8 @@ if job_url:
         # For now, just display job_text and let Gemini extract company name later 
         #st.text_area("Job Description", job_text, height=300) 
     except Exception as e: st.error(f"Error fetching job description: {e}") 
+else:
+    st.warning("⚠️ You must provide a valid URL above.")    
 
 # --- One-click Fit Analysis ---
 if st.button("🔍 Analyze CV vs Job Fit", disabled=not cv_text or not job_text):
